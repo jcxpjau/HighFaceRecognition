@@ -1,9 +1,0 @@
-fastapi
-uvicorn
-face_recognition
-Pillow
-python-multipart
-scipy
-numpy
-qdrant-client
-redis

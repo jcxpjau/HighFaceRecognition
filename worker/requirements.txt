@@ -1,0 +1,7 @@
+aio-pika
+aioredis
+numpy
+face_recognition
+qdrant-client
+dlib
+pillow

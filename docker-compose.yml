@@ -1,14 +1,45 @@
 version: "3.8"
 services:
-  app:
-    build: .
-    container_name: Avent7Recognition
+  api:
+    build:
+      context: ./api
+    container_name: Avent7Recognition_api
     ports:
       - "8000:8000"
     volumes:
-      - .:/app
+      - ./api:/app
     depends_on:
       - qdrant
+      - rabbitmq
+      - redis
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./worker
+    container_name: Avent7Recognition_worker
+    volumes:
+      - ./worker:/app
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+    restart: unless-stopped
 
   qdrant:
     image: qdrant/qdrant
@@ -17,12 +48,35 @@ services:
       - "6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     container_name: Avent7Recognition_redis
     ports:
       - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: Avent7Recognition_rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   qdrant_data:
