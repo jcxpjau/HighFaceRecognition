@@ -1,4 +1,3 @@
-version: "3.8"
 services:
   api:
     build:
@@ -8,6 +7,7 @@ services:
       - "8000:8000"
     volumes:
       - ./api:/app
+      - ./system/photos/recognition:/app/system/photos/recognition
     depends_on:
       - qdrant
       - rabbitmq
@@ -27,6 +27,7 @@ services:
     container_name: Avent7Recognition_worker
     volumes:
       - ./worker:/app
+      - ./system/photos/recognition:/app/system/photos/recognition
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -80,3 +81,4 @@ services:
 
 volumes:
   qdrant_data:
+  photos_data:
