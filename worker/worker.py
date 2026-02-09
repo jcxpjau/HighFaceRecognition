@@ -31,7 +31,6 @@ async def process_message(message: IncomingMessage, redis, qdrant, channel):
             print("⚠️ Missing job_id or path in message")
             return
 
-        # Passo 1: carregar e processar a imagem para extrair encoding
         try:
             pil_image = Image.open(image_path)
             pil_image = ImageOps.exif_transpose(pil_image).convert("RGB")

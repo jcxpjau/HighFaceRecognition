@@ -30,7 +30,6 @@ COLLECTION_NAME = "faces"
 
 @app.on_event("startup")
 async def startup_event():
-    # Conexão async com retry
     for i in range(10):
         try:
             connection = await aio_pika.connect_robust("amqp://guest:guest@rabbitmq/")

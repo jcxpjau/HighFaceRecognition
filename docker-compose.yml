@@ -2,7 +2,7 @@ services:
   api:
     build:
       context: ./api
-    container_name: Avent7Recognition_api
+    container_name: API
     ports:
       - "8000:8000"
     volumes:
@@ -24,7 +24,7 @@ services:
   worker:
     build:
       context: ./worker
-    container_name: Avent7Recognition_worker
+    container_name: Worker
     volumes:
       - ./worker:/app
       - ./system/photos/recognition:/app/system/photos/recognition
@@ -44,7 +44,7 @@ services:
 
   qdrant:
     image: qdrant/qdrant
-    container_name: Avent7Recognition_qdrant
+    container_name: qDrant
     ports:
       - "6333:6333"
     volumes:
@@ -53,7 +53,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: Avent7Recognition_redis
+    container_name: Redis
     ports:
       - "6379:6379"
     restart: unless-stopped
@@ -65,7 +65,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
-    container_name: Avent7Recognition_rabbitmq
+    container_name: RabbitMQ
     ports:
       - "5672:5672"
       - "15672:15672"
