@@ -9,7 +9,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from PIL import Image, ImageOps
 
-import face_recognition 
+import face_recognition
 from aio_pika import Message, DeliveryMode
 
 from dependencies import get_redis_async, get_rabbitmq_channel
@@ -20,9 +20,6 @@ from qdrant import get_qdrant_client
 # ========================
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = os.getenv("REDIS_PORT", "6379")
-RABBITMQ_URL = (
-    f"{REDIS_HOST}://{REDIS_HOST}:{REDIS_PORT}"
-)
 QUEUE_NAME = os.getenv("QUEUE_NAME", "face_recognition_jobs")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "faces")
 CACHE_DISTANCE_THRESHOLD = float(os.getenv("CACHE_DISTANCE_THRESHOLD", 0.45))
@@ -44,7 +41,6 @@ class RecognitionResponse(BaseModel):
     job_id: Optional[str] = None
     status: Optional[str] = None
 
-
 # ========================
 # Utils
 # ========================
@@ -60,7 +56,6 @@ def preprocess_image(image_bytes: bytes) -> Image.Image:
         )
     return pil_image
 
-
 async def encode_face(pil_image: Image.Image) -> Optional[list]:
     buffer = io.BytesIO()
     pil_image.save(buffer, format="JPEG", quality=100)
@@ -73,21 +68,6 @@ async def encode_face(pil_image: Image.Image) -> Optional[list]:
     encodings = await run_in_threadpool(face_recognition.face_encodings, image_array, face_locations)
     return encodings[0] if encodings else None
 
-
-async def search_qdrant(qdrant, encoding: list):
-    def search_point():
-        results = qdrant.points.search(
-            collection_name=COLLECTION_NAME,
-            query_vector=encoding.tolist(),
-            limit=1,
-            with_payload=True
-        )
-        return results
-
-    results = await run_in_threadpool(search_point)
-    return results[0] if results else None
-
-
 async def increment_redis(redis_client, key: str):
     if redis_client:
         try:
@@ -95,6 +75,39 @@ async def increment_redis(redis_client, key: str):
         except Exception as e:
             print(f"Redis increment failed: {e}")
 
+async def search_qdrant(qdrant, encoding: list):
+    def search_point():
+        best_point = None
+        best_distance = float("inf")
+
+        
+        points, next_page = qdrant.scroll(
+            collection_name=COLLECTION_NAME,
+            limit=1000
+        )
+
+        for point in points:
+            distance = point.score if hasattr(point, "score") else 0.0
+            if distance < best_distance:
+                best_distance = distance
+                best_point = point
+
+        while next_page:
+            points, next_page = qdrant.scroll(
+                collection_name=COLLECTION_NAME,
+                limit=1000,
+                offset=next_page
+            )
+            for point in points:
+                distance = point.score if hasattr(point, "score") else 0.0
+                if distance < best_distance:
+                    best_distance = distance
+                    best_point = point
+
+        return best_point
+
+    result = await run_in_threadpool(search_point)
+    return result
 
 # ========================
 # Endpoints
@@ -111,13 +124,11 @@ async def async_recognition(
     job_id = str(uuid.uuid4())
     file_path = os.path.join(FOTOS_DIR, f"{job_id}.jpg")
 
-    
     def write_file():
         with open(file_path, "wb") as f:
             f.write(image_bytes)
     await run_in_threadpool(write_file)
 
-    
     message_body = json.dumps({"job_id": job_id, "path": file_path}).encode()
     await rabbitmq_channel.default_exchange.publish(
         Message(body=message_body, delivery_mode=DeliveryMode.PERSISTENT),
@@ -125,7 +136,6 @@ async def async_recognition(
     )
 
     return RecognitionResponse(status="pending", job_id=job_id)
-
 
 @router.post("/sync-recognition", response_model=RecognitionResponse)
 async def sync_recognition(
@@ -145,14 +155,12 @@ async def sync_recognition(
 
     result = await search_qdrant(qdrant, encoding)
     if result:
-        distance = result.score
-        if distance <= CACHE_DISTANCE_THRESHOLD:
-            payload = result.payload
-            await increment_redis(redis_client, RECOGNITION_COUNTER_KEY)
-            return RecognitionResponse(
-                name=payload.get("identifier"),
-                photo=payload.get("photo"),
-                cached=True
-            )
+        payload = result.payload
+        await increment_redis(redis_client, RECOGNITION_COUNTER_KEY)
+        return RecognitionResponse(
+            name=payload.get("identifier"),
+            photo=payload.get("photo"),
+            cached=True
+        )
 
     return RecognitionResponse(message="Unrecognized face.", cached=False)
