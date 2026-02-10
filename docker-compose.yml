@@ -31,13 +31,15 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      qdrant:
+        condition: service_started
     env_file:
       - .env
-    restart: unless-stopped
+    restart: always
 
   qdrant:
     image: qdrant/qdrant
-    container_name: qDrant
+    container_name: qdrant
     ports:
       - "6333:6333"
     volumes:
@@ -46,7 +48,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: Redis
+    container_name: redis
     ports:
       - "${REDIS_PORT}:${REDIS_PORT}"
     restart: unless-stopped
@@ -58,7 +60,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
-    container_name: RabbitMQ
+    container_name: rabbitmq
     ports:
       - "${RABBITMQ_PORT}:${RABBITMQ_PORT}"
       - "${RABBITMQ_MANAGEMENT_PORT}:${RABBITMQ_MANAGEMENT_PORT}"

@@ -30,7 +30,7 @@ app.add_middleware(
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = os.getenv("REDIS_PORT", "6379")
 REDIS_URL = (
-    f"{REDIS_HOST}://{REDIS_HOST}:{REDIS_PORT}"
+    f"redis://{REDIS_HOST}:{REDIS_PORT}"
 )
 QUEUE_NAME = os.getenv("QUEUE_NAME", "face_recognition_jobs")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "faces")

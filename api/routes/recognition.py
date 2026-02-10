@@ -2,6 +2,7 @@ import io
 import json
 import os
 import uuid
+import base64
 from typing import Optional
 
 from fastapi import APIRouter, File, UploadFile, Depends, HTTPException
@@ -18,8 +19,6 @@ from qdrant import get_qdrant_client
 # ========================
 # CONFIGS
 # ========================
-REDIS_HOST = os.getenv("REDIS_HOST", "redis")
-REDIS_PORT = os.getenv("REDIS_PORT", "6379")
 QUEUE_NAME = os.getenv("QUEUE_NAME", "face_recognition_jobs")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "faces")
 CACHE_DISTANCE_THRESHOLD = float(os.getenv("CACHE_DISTANCE_THRESHOLD", 0.45))
@@ -122,16 +121,19 @@ async def async_recognition(
 
     image_bytes = await file.read()
     job_id = str(uuid.uuid4())
-    file_path = os.path.join(FOTOS_DIR, f"{job_id}.jpg")
 
-    def write_file():
-        with open(file_path, "wb") as f:
-            f.write(image_bytes)
-    await run_in_threadpool(write_file)
+    image_b64 = base64.b64encode(image_bytes).decode("utf-8")
 
-    message_body = json.dumps({"job_id": job_id, "path": file_path}).encode()
+    message_body = json.dumps({
+        "job_id": job_id,
+        "image_base64": image_b64
+    }).encode()
+
     await rabbitmq_channel.default_exchange.publish(
-        Message(body=message_body, delivery_mode=DeliveryMode.PERSISTENT),
+        Message(
+            body=message_body,
+            delivery_mode=DeliveryMode.PERSISTENT
+        ),
         routing_key=QUEUE_NAME
     )
 
