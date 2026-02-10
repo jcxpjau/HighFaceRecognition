@@ -14,7 +14,7 @@ from urllib.parse import quote_plus
 
 app = FastAPI(
     title="Face Recognition App",
-    description="API for face recognition with high performance",
+    description="API for face recognition for high performance",
     version="1.0.0"
 )
 app.add_middleware(
