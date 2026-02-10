@@ -12,26 +12,28 @@ RABBITMQ_URL = f"amqp://guest:guest@{os.getenv('RABBITMQ_HOST', 'localhost')}:{o
 REDIS_URL = f"redis://{os.getenv('REDIS_HOST', 'localhost')}:{os.getenv('REDIS_PORT', '6379')}"
 QDRANT_HOST = os.getenv('QDRANT_HOST', 'localhost')
 QDRANT_PORT = int(os.getenv('QDRANT_PORT', 6333))
+
 COLLECTION_NAME = "faces"
 CACHE_DISTANCE_THRESHOLD = 0.5
+CACHE_TTL_SECONDS = 3600
 RECOGNITION_COUNTER_KEY = "recognition_count"
 
+MAX_RETRIES = 3
+RETRY_PREFIX = "retry:"
+
 async def process_message(message: IncomingMessage, redis, qdrant, channel):
-    async with message.process():
+    async with message.process(ignore_processed=True):
         try:
             data = json.loads(message.body.decode())
-        except Exception as e:
-            print(f"❌ Error decoding message: {e}")
-            return
+            job_id = data.get("job_id")
+            image_path = data.get("path")
 
-        job_id = data.get("job_id")
-        image_path = data.get("path")
+            if not job_id or not image_path:
+                print("Invalid message format: job_id or path missing")
+                return
 
-        if not job_id or not image_path:
-            print("⚠️ Missing job_id or path in message")
-            return
+            print(f"Processing job {job_id}")
 
-        try:
             pil_image = Image.open(image_path)
             pil_image = ImageOps.exif_transpose(pil_image).convert("RGB")
 
@@ -51,112 +53,127 @@ async def process_message(message: IncomingMessage, redis, qdrant, channel):
                 return
 
             unknown_encoding = face_recognition.face_encodings(image, face_locations)[0]
+            unknown_encoding = np.array(unknown_encoding)
 
         except Exception as e:
-            print(f"❌ Error processing image {image_path} for job {job_id}: {e}")
+            await handle_retry(message, redis, channel, str(e))
             return
 
-        unknown_encoding = np.array(unknown_encoding)
-
-        async for key in redis.scan_iter(match="face_cache:*"):
-            data_json = await redis.get(key)
-            if not data_json:
-                continue
-            cached_data = json.loads(data_json)
-            cached_encoding = np.array(cached_data["encoding"])
-            distance = np.linalg.norm(unknown_encoding - cached_encoding)
-            if distance <= CACHE_DISTANCE_THRESHOLD:
-                identifier = cached_data["identifier"]
-                photo = cached_data["photo"]
-                await redis.incr(RECOGNITION_COUNTER_KEY)
-                await channel.default_exchange.publish(
-                    Message(
-                        body=json.dumps({
-                            "job_id": job_id,
-                            "identifier": identifier,
-                            "photo": photo,
-                            "cached": True
-                        }).encode(),
-                        delivery_mode=DeliveryMode.PERSISTENT
-                    ),
-                    routing_key="face_recognition_success"
-                )
-                return
-
         try:
+            async for key in redis.scan_iter(match="face_cache:*"):
+                cached_json = await redis.get(key)
+                if not cached_json:
+                    continue
+
+                cached_data = json.loads(cached_json)
+                cached_encoding = np.array(cached_data["encoding"])
+                distance = np.linalg.norm(unknown_encoding - cached_encoding)
+
+                if distance <= CACHE_DISTANCE_THRESHOLD:
+                    print(f"Cache hit for job {job_id}")
+                    await redis.incr(RECOGNITION_COUNTER_KEY)
+
+                    await publish_success(channel, job_id, cached_data["identifier"], cached_data["photo"], True)
+                    return
+
+            print(f"🔍 Searching vector in Qdrant for job {job_id}")
+
             search_result = qdrant.search(
                 collection_name=COLLECTION_NAME,
                 query_vector=unknown_encoding.tolist(),
                 limit=1,
                 with_payload=True,
             )
-        except Exception as e:
-            print(f"❌ Error searching Qdrant for job {job_id}: {e}")
-            return
 
-        if search_result:
-            point = search_result[0]
-            distance = point.score
-            if distance <= CACHE_DISTANCE_THRESHOLD:
-                payload = point.payload
-                await redis.incr(RECOGNITION_COUNTER_KEY)
-                await redis.set(
-                    f"face_cache:{payload['identifier']}",
-                    json.dumps({
-                        "encoding": unknown_encoding.tolist(),
-                        "identifier": payload["identifier"],
-                        "photo": payload["photo"]
-                    }),
-                    ex=3600
-                )
-                os.remove(image_path)
-                await channel.default_exchange.publish(
-                    Message(
-                        body=json.dumps({
-                            "job_id": job_id,
+            if search_result:
+                point = search_result[0]
+                distance = point.score
+
+                if distance <= CACHE_DISTANCE_THRESHOLD:
+                    payload = point.payload
+                    print(f"Face recognized for job {job_id} (distance={distance:.4f})")
+
+                    await redis.incr(RECOGNITION_COUNTER_KEY)
+                    await redis.set(
+                        f"face_cache:{payload['identifier']}",
+                        json.dumps({
+                            "encoding": unknown_encoding.tolist(),
                             "identifier": payload["identifier"],
-                            "photo": payload["photo"],
-                            "cached": False
-                        }).encode(),
-                        delivery_mode=DeliveryMode.PERSISTENT
-                    ),
-                    routing_key="face_recognition_success"
-                )
-                return
+                            "photo": payload["photo"]
+                        }),
+                        ex=CACHE_TTL_SECONDS
+                    )
 
-        os.remove(image_path)
-        await channel.default_exchange.publish(
-            Message(
-                body=json.dumps({
-                    "job_id": job_id,
-                    "identifier": "Not face found",
-                    "photo": "",
-                    "cached": False
-                }).encode(),
-                delivery_mode=DeliveryMode.PERSISTENT
-            ),
-            routing_key="face_recognition_success"
-        )
+                    os.remove(image_path)
+                    await publish_success(channel, job_id, payload["identifier"], payload["photo"], False)
+                    return
 
-        
+            print(f"No match found for job {job_id}")
+
+            os.remove(image_path)
+            await publish_success(channel, job_id, "Unknown", "", False)
+
+        except Exception as e:
+            await handle_retry(message, redis, channel, str(e))
+
+
+async def handle_retry(message, redis, channel, reason):
+    body = json.loads(message.body.decode())
+    job_id = body.get("job_id", "unknown")
+
+    retry_key = f"{RETRY_PREFIX}{job_id}"
+    retries = await redis.incr(retry_key)
+    await redis.expire(retry_key, 3600)
+
+    print(f"Retry {retries}/{MAX_RETRIES} for job {job_id} | Reason: {reason}")
+
+    if retries >= MAX_RETRIES:
+        print(f"☠️ Job {job_id} failed after {MAX_RETRIES} retries")
+        return
+
+    await channel.default_exchange.publish(
+        Message(
+            body=message.body,
+            delivery_mode=DeliveryMode.PERSISTENT
+        ),
+        routing_key="face_recognition_jobs"
+    )
+
+
+async def publish_success(channel, job_id, identifier, photo, cached):
+    payload = {
+        "job_id": job_id,
+        "identifier": identifier,
+        "photo": photo,
+        "cached": cached
+    }
+
+    await channel.default_exchange.publish(
+        Message(
+            body=json.dumps(payload).encode(),
+            delivery_mode=DeliveryMode.PERSISTENT
+        ),
+        routing_key="face_recognition_success"
+    )
 
 
 async def main():
+    print("Worker started")
+
     connection = await connect_robust(RABBITMQ_URL)
     channel = await connection.channel()
+    await channel.set_qos(prefetch_count=1)
+
     queue = await channel.declare_queue("face_recognition_jobs", durable=True)
     await channel.declare_queue("face_recognition_success", durable=True)
 
     redis = await aioredis.from_url(REDIS_URL, decode_responses=True)
     qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
 
-
     async with queue.iterator() as queue_iter:
         async for message in queue_iter:
-            try:
-                await process_message(message, redis, qdrant, channel)
-            except Exception as e:
-                print(f"❌ Error processing message: {e}")
+            await process_message(message, redis, qdrant, channel)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -12,8 +12,8 @@ import asyncio
 from app.qdrant import init_qdrant_collection, get_qdrant_client
 
 app = FastAPI(
-    title="Avent7 Face Recognition App",
-    description="API for face recognition powered by Avent7",
+    title="Face Recognition App",
+    description="API for face recognition for high performance",
     version="1.0.0"
 )
 

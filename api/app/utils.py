@@ -6,9 +6,6 @@ import pika
 import json
 import face_recognition
 
-
-
-
 def publish_job_to_rabbitmq(channel, job_id: str, encoding: list[float]):
     message = json.dumps({
         "job_id": job_id,

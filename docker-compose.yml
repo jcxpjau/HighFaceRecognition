@@ -13,12 +13,7 @@ services:
       - rabbitmq
       - redis
     environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_PORT=5672
-      - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6333
+      - env
     restart: unless-stopped
 
   worker:
@@ -34,12 +29,7 @@ services:
       redis:
         condition: service_healthy
     environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_PORT=5672
-      - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6333
+      - env
     restart: unless-stopped
 
   qdrant:
@@ -70,8 +60,7 @@ services:
       - "5672:5672"
       - "15672:15672"
     environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
+      - env
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "rabbitmqctl", "status"]
