@@ -96,9 +96,9 @@ docker-compose up --build
 
 POST /async-recognition\
 POST /sync-recognition\
-GET /stats
-GET /users
-DELETE /stats
+GET /stats\
+GET /users\
+DELETE /stats\
 
 ------------------------------------------------------------------------
 
