@@ -84,8 +84,8 @@ async def shutdown_event():
 # =========================
 # ROUTES
 # =========================
-app.include_router(upload_router)
-app.include_router(recognition_router)
-app.include_router(stats_router)
-app.include_router(users_router)
-app.include_router(reset_router)
+app.include_router(upload_router, tags=["Upload"])
+app.include_router(recognition_router, tags=["Recognition"])
+app.include_router(stats_router, tags=["Stats"])
+app.include_router(users_router, tags=["Users"])
+app.include_router(reset_router, tags=["Reset"])
