@@ -1,5 +1,6 @@
 FROM python:3.10-slim
 
+# Instalar dependências de sistema
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
@@ -9,16 +10,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgtk-3-dev \
     libboost-python-dev \
     python3-dev \
+    libjpeg-dev \
+    libpng-dev \
+    ffmpeg \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+WORKDIR /api
 
 COPY requirements.txt .
 
+# Atualizar pip e instalar requirements
 RUN pip install --no-cache-dir --upgrade pip
-RUN pip install gunicorn uvicorn
+RUN pip install --no-cache-dir gunicorn uvicorn
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000", "--workers", "2"]
+# Rodar API com Gunicorn + Uvicorn
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "main:app", "--bind", "0.0.0.0:8000", "--workers", "2"]

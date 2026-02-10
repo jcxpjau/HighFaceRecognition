@@ -6,14 +6,17 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./api:/app
+      - ./api:/api
       - ./system/photos/recognition:/app/system/photos/recognition
     depends_on:
-      - qdrant
-      - rabbitmq
-      - redis
-    environment:
-      - env
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    env_file:
+      - .env
     restart: unless-stopped
 
   worker:
@@ -21,15 +24,15 @@ services:
       context: ./worker
     container_name: Worker
     volumes:
-      - ./worker:/app
+      - ./worker:/worker
       - ./system/photos/recognition:/app/system/photos/recognition
     depends_on:
       rabbitmq:
         condition: service_healthy
       redis:
         condition: service_healthy
-    environment:
-      - env
+    env_file:
+      - .env
     restart: unless-stopped
 
   qdrant:
@@ -45,7 +48,7 @@ services:
     image: redis:7-alpine
     container_name: Redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT}:${REDIS_PORT}"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -57,10 +60,10 @@ services:
     image: rabbitmq:3-management-alpine
     container_name: RabbitMQ
     ports:
-      - "5672:5672"
-      - "15672:15672"
-    environment:
-      - env
+      - "${RABBITMQ_PORT}:${RABBITMQ_PORT}"
+      - "${RABBITMQ_MANAGEMENT_PORT}:${RABBITMQ_MANAGEMENT_PORT}"
+    env_file:
+      - .env
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "rabbitmqctl", "status"]

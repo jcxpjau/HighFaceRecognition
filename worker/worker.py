@@ -12,8 +12,8 @@ RABBITMQ_URL = f"amqp://guest:guest@{os.getenv('RABBITMQ_HOST', 'localhost')}:{o
 REDIS_URL = f"redis://{os.getenv('REDIS_HOST', 'localhost')}:{os.getenv('REDIS_PORT', '6379')}"
 QDRANT_HOST = os.getenv('QDRANT_HOST', 'localhost')
 QDRANT_PORT = int(os.getenv('QDRANT_PORT', 6333))
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "faces")
 
-COLLECTION_NAME = "faces"
 CACHE_DISTANCE_THRESHOLD = 0.5
 CACHE_TTL_SECONDS = 3600
 RECOGNITION_COUNTER_KEY = "recognition_count"
